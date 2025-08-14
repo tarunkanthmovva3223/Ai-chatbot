@@ -18,6 +18,7 @@ export function AuthForm() {
   const [error, setError] = useState<string | null>(null)
   const { signIn, signUp } = useAuth()
 
+  console.log('AuthForm rendered')
   const {
     register,
     handleSubmit,
@@ -27,6 +28,7 @@ export function AuthForm() {
   })
 
   const onSubmit = async (data: AuthFormData) => {
+    console.log('Form submitted:', { email: data.email })
     setLoading(true)
     setError(null)
 
@@ -36,9 +38,11 @@ export function AuthForm() {
         : await signIn(data.email, data.password)
 
       if (error) {
+        console.error('Auth error:', error)
         setError(error.message)
       }
     } catch (err) {
+      console.error('Unexpected error:', err)
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)
