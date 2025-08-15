@@ -78,6 +78,7 @@ export function useMessages(chatId: string | null) {
 
     // Call the chatbot function
     try {
+      console.log('Calling chatbot function for chat:', chatId)
       const { data: botResponse, error: functionError } = await supabase.functions.invoke(
         'chatbot',
         {
@@ -91,9 +92,11 @@ export function useMessages(chatId: string | null) {
 
       if (functionError) {
         console.error('Error calling chatbot function:', functionError)
+        // Still return the user message even if bot fails
         return userMessage
       }
 
+      console.log('Chatbot function response:', botResponse)
       return userMessage
     } catch (error) {
       console.error('Error with chatbot:', error)
