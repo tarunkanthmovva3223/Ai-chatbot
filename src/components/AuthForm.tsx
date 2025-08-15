@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '../hooks/useAuth'
-import { Mail, Lock, Loader2, MessageCircle } from 'lucide-react'
+import { Mail, Lock, Loader2, MessageCircle, AlertCircle } from 'lucide-react'
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -16,9 +16,9 @@ export function AuthForm() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const { signIn, signUp } = useAuth()
 
-  console.log('AuthForm rendered')
   const {
     register,
     handleSubmit,
@@ -28,9 +28,10 @@ export function AuthForm() {
   })
 
   const onSubmit = async (data: AuthFormData) => {
-    console.log('Form submitted:', { email: data.email })
+    console.log('Form submitted:', { email: data.email, isSignUp })
     setLoading(true)
     setError(null)
+    setSuccess(null)
 
     try {
       const { error } = isSignUp
@@ -40,6 +41,9 @@ export function AuthForm() {
       if (error) {
         console.error('Auth error:', error)
         setError(error.message)
+      } else if (isSignUp) {
+        setSuccess('Account created successfully! You can now sign in.')
+        setIsSignUp(false)
       }
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -105,8 +109,15 @@ export function AuthForm() {
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start">
+                <AlertCircle className="w-5 h-5 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
                 <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
+
+            {success && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-sm text-green-600">{success}</p>
               </div>
             )}
 
@@ -129,13 +140,24 @@ export function AuthForm() {
           <div className="mt-6 text-center">
             <button
               type="button"
-              onClick={() => setIsSignUp(!isSignUp)}
+              onClick={() => {
+                setIsSignUp(!isSignUp)
+                setError(null)
+                setSuccess(null)
+              }}
               className="text-blue-600 hover:text-blue-700 font-medium"
             >
               {isSignUp
                 ? 'Already have an account? Sign in'
                 : "Don't have an account? Sign up"}
             </button>
+          </div>
+
+          {/* Debug info */}
+          <div className="mt-6 p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-500 text-center">
+              Need to connect to Supabase? Click "Connect to Supabase" in the top right.
+            </p>
           </div>
         </div>
       </div>
