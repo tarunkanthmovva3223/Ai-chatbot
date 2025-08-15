@@ -136,7 +136,8 @@ Deno.serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: 'Bot response saved successfully',
-        bot_message: botMessage
+        bot_message: botMessage,
+        chat_id: chat_id
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

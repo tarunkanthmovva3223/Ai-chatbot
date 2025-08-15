@@ -5,6 +5,7 @@ import { useAuth } from './useAuth'
 export function useMessages(chatId: string | null) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
+  const [botTyping, setBotTyping] = useState(false)
   const { user } = useAuth()
 
   useEffect(() => {
@@ -17,9 +18,9 @@ export function useMessages(chatId: string | null) {
     console.log('Setting up messages for chat:', chatId)
     fetchMessages()
 
-    // Subscribe to message changes with more specific filtering
+    // Subscribe to ALL message changes for this chat
     const subscription = supabase
-      .channel(`messages-${chatId}`)
+      .channel(`chat-messages-${chatId}`)
       .on(
         'postgres_changes',
         {
@@ -29,23 +30,36 @@ export function useMessages(chatId: string | null) {
           filter: `chat_id=eq.${chatId}`,
         },
         (payload) => {
-          console.log('New message received:', payload)
+          console.log('New message received via subscription:', payload)
           const newMessage = payload.new as Message
-          // Only add if it belongs to the current user
-          if (newMessage.user_id === user.id) {
+          
+          // Only add if it belongs to the current user and chat
+          if (newMessage.user_id === user.id && newMessage.chat_id === chatId) {
             setMessages(prev => {
               // Check if message already exists to avoid duplicates
               const exists = prev.some(msg => msg.id === newMessage.id)
-              if (exists) return prev
-              return [...prev, newMessage].sort((a, b) => 
+              if (exists) {
+                console.log('Message already exists, skipping')
+                return prev
+              }
+              
+              console.log('Adding new message to state:', newMessage.id, newMessage.is_bot ? 'bot' : 'user')
+              const updated = [...prev, newMessage].sort((a, b) => 
                 new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
               )
+              
+              // If it's a bot message, stop the typing indicator
+              if (newMessage.is_bot) {
+                setBotTyping(false)
+              }
+              
+              return updated
             })
           }
         }
       )
       .subscribe((status) => {
-        console.log('Subscription status:', status)
+        console.log('Messages subscription status:', status)
       })
 
     return () => {
@@ -80,7 +94,7 @@ export function useMessages(chatId: string | null) {
     console.log('Sending message:', content.substring(0, 50))
 
     try {
-      // Insert user message and immediately add to local state
+      // Insert user message
       const { data: userMessage, error: userError } = await supabase
         .from('messages')
         .insert([
@@ -101,7 +115,7 @@ export function useMessages(chatId: string | null) {
 
       console.log('User message saved:', userMessage.id)
 
-      // Immediately add user message to local state (don't wait for subscription)
+      // Immediately add user message to local state
       setMessages(prev => {
         const exists = prev.some(msg => msg.id === userMessage.id)
         if (exists) return prev
@@ -109,6 +123,9 @@ export function useMessages(chatId: string | null) {
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         )
       })
+
+      // Show bot typing indicator
+      setBotTyping(true)
 
       // Call the chatbot function
       console.log('Calling chatbot function...')
@@ -125,6 +142,8 @@ export function useMessages(chatId: string | null) {
 
       if (functionError) {
         console.error('Error calling chatbot function:', functionError)
+        setBotTyping(false)
+        
         // Add error message to chat
         const errorMessage: Message = {
           id: `error-${Date.now()}`,
@@ -137,11 +156,13 @@ export function useMessages(chatId: string | null) {
         setMessages(prev => [...prev, errorMessage])
       } else {
         console.log('Chatbot function response:', botResponse)
+        // Don't stop typing here - let the subscription handle it when the bot message arrives
       }
 
       return userMessage
     } catch (error) {
       console.error('Error with message sending:', error)
+      setBotTyping(false)
       return null
     }
   }
@@ -149,6 +170,7 @@ export function useMessages(chatId: string | null) {
   return {
     messages,
     loading,
+    botTyping,
     sendMessage,
     refetch: fetchMessages,
   }

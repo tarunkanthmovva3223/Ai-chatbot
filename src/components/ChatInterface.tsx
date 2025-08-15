@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useMessages } from '../hooks/useMessages'
 import { Chat } from '../lib/supabase'
 import { MessageBubble } from './MessageBubble'
+import { TypingIndicator } from './TypingIndicator'
 import { Send, Loader2 } from 'lucide-react'
 
 interface ChatInterfaceProps {
@@ -11,7 +12,7 @@ interface ChatInterfaceProps {
 export function ChatInterface({ chat }: ChatInterfaceProps) {
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
-  const { messages, loading, sendMessage } = useMessages(chat.id)
+  const { messages, loading, botTyping, sendMessage } = useMessages(chat.id)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -20,7 +21,7 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [messages, botTyping])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,7 +43,14 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h2 className="text-lg font-semibold text-gray-900">{chat.title}</h2>
-        <p className="text-sm text-gray-500">AI-powered conversation</p>
+        <p className="text-sm text-gray-500">
+          AI-powered conversation
+          {botTyping && (
+            <span className="ml-2 text-blue-600">
+              • AI is typing...
+            </span>
+          )}
+        </p>
       </div>
 
       {/* Messages */}
@@ -64,6 +72,10 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
                 <MessageBubble key={msg.id} message={msg} />
               ))
             )}
+            
+            {/* Typing indicator */}
+            {botTyping && <TypingIndicator />}
+            
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -78,14 +90,14 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               disabled={sending}
-              placeholder="Type your message..."
+              placeholder={botTyping ? "AI is responding..." : "Type your message..."}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
           </div>
           
           <button
             type="submit"
-            disabled={!message.trim() || sending}
+            disabled={!message.trim() || sending || botTyping}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg transition-colors flex items-center justify-center min-w-[100px]"
           >
             {sending ? (
