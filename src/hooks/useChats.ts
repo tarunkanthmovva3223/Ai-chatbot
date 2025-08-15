@@ -14,26 +14,44 @@ export function useChats() {
       return
     }
 
+    console.log('Setting up chats for user:', user.id)
     fetchChats()
 
     // Subscribe to chat changes
     const subscription = supabase
-      .channel('chats')
+      .channel(`chats-${user.id}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'chats',
           filter: `user_id=eq.${user.id}`,
         },
-        () => {
+        (payload) => {
+          console.log('New chat received:', payload)
           fetchChats()
         }
       )
-      .subscribe()
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chats',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('Chat updated:', payload)
+          fetchChats()
+        }
+      )
+      .subscribe((status) => {
+        console.log('Chats subscription status:', status)
+      })
 
     return () => {
+      console.log('Cleaning up chats subscription')
       subscription.unsubscribe()
     }
   }, [user])
@@ -41,13 +59,17 @@ export function useChats() {
   const fetchChats = async () => {
     if (!user) return
 
+    console.log('Fetching chats for user:', user.id)
     const { data, error } = await supabase
       .from('chats')
       .select('*')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
 
-    if (!error && data) {
+    if (error) {
+      console.error('Error fetching chats:', error)
+    } else {
+      console.log('Fetched chats:', data?.length)
       setChats(data)
     }
     setLoading(false)

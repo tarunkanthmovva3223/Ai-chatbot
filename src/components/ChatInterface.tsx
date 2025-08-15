@@ -26,10 +26,12 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
     e.preventDefault()
     if (!message.trim() || sending) return
 
+    const messageToSend = message.trim()
+    setMessage('') // Clear input immediately
     setSending(true)
+    
     try {
-      await sendMessage(message.trim())
-      setMessage('')
+      await sendMessage(messageToSend)
     } finally {
       setSending(false)
     }
