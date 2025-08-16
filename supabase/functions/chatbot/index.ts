@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
             'X-Title': 'AI Chat Assistant',
           },
           body: JSON.stringify({
-            model: 'meta-llama/llama-3.2-1b-instruct:free', // Faster 1B model instead of 3B
+            model: 'mistralai/mistral-7b-instruct-v0.2', // Faster 1B model instead of 3B
             messages: [
               {
                 role: 'system',
