@@ -9,8 +9,8 @@ export function useAuth() {
 
   useEffect(() => {
     // Check if Supabase is configured
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    const supabaseUrl = import.meta.VITE_SUPABASE_URL
+    const supabaseKey = import.meta.VITE_SUPABASE_ANON_KEY
 
     if (!supabaseUrl || !supabaseKey) {
       setError('Supabase configuration missing. Please connect to Supabase.')
