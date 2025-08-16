@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('Chatbot function called')
+    console.log('=== Chatbot function started ===')
     
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     )
 
     const { chat_id, message, user_id }: ChatbotRequest = await req.json()
-    console.log('Request data:', { chat_id, message: message.substring(0, 50), user_id })
+    console.log('Processing request:', { chat_id, user_id, messageLength: message.length })
 
     // Verify the user owns the chat
     const { data: chat, error: chatError } = await supabaseClient
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    console.log('Chat verified, calling OpenRouter...')
+    console.log('Chat verified, generating AI response...')
 
     // Get OpenRouter API key
     const openRouterKey = Deno.env.get('OPENROUTER_API_KEY')
@@ -61,11 +61,13 @@ Deno.serve(async (req) => {
     let botMessage = ''
     
     if (!openRouterKey) {
-      console.warn('OpenRouter API key not configured, using fallback response')
-      botMessage = `I received your message: "${message}". However, I'm currently not configured with an OpenRouter API key, so I can't provide AI-powered responses. Please ask your administrator to configure the OPENROUTER_API_KEY environment variable in the Supabase Edge Functions settings.`
+      console.warn('OpenRouter API key not configured')
+      botMessage = `I received your message: "${message}". However, I need an OpenRouter API key to provide AI responses. Please configure the OPENROUTER_API_KEY environment variable in your Supabase project settings.`
     } else {
       try {
-        // Call OpenRouter API
+        console.log('Calling OpenRouter API...')
+        
+        // Use a faster, more responsive model
         const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -74,41 +76,44 @@ Deno.serve(async (req) => {
             'X-Title': 'AI Chat Assistant',
           },
           body: JSON.stringify({
-            model: 'meta-llama/llama-3.2-3b-instruct:free',
+            model: 'meta-llama/llama-3.2-1b-instruct:free', // Faster 1B model instead of 3B
             messages: [
               {
                 role: 'system',
-                content: 'You are a helpful AI assistant. Be concise and helpful in your responses.'
+                content: 'You are a helpful AI assistant. Be concise, friendly, and provide quick, useful responses. Keep responses under 100 words unless specifically asked for more detail.'
               },
               {
                 role: 'user',
                 content: message
               }
             ],
-            max_tokens: 500,
-            temperature: 0.7
+            max_tokens: 200, // Reduced for faster responses
+            temperature: 0.7,
+            top_p: 0.9,
+            frequency_penalty: 0,
+            presence_penalty: 0
           })
         })
 
         if (!openRouterResponse.ok) {
           const errorText = await openRouterResponse.text()
           console.error('OpenRouter API error:', errorText)
-          botMessage = 'Sorry, I encountered an error while processing your request. Please try again later.'
+          botMessage = 'I apologize, but I encountered an error while processing your request. Please try again.'
         } else {
           const aiResponse = await openRouterResponse.json()
-          botMessage = aiResponse.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.'
-          console.log('OpenRouter response received')
+          botMessage = aiResponse.choices?.[0]?.message?.content || 'I apologize, but I could not generate a response. Please try again.'
+          console.log('AI response generated successfully')
         }
       } catch (error) {
         console.error('Error calling OpenRouter:', error)
-        botMessage = 'Sorry, I encountered a technical error. Please try again later.'
+        botMessage = 'I encountered a technical error. Please try again in a moment.'
       }
     }
 
     console.log('Saving bot response to database...')
 
     // Save bot response to database
-    const { error: insertError } = await supabaseClient
+    const { data: botMessageData, error: insertError } = await supabaseClient
       .from('messages')
       .insert([
         {
@@ -118,6 +123,8 @@ Deno.serve(async (req) => {
           user_id,
         }
       ])
+      .select()
+      .single()
 
     if (insertError) {
       console.error('Error saving bot message:', insertError)
@@ -130,14 +137,14 @@ Deno.serve(async (req) => {
       .update({ updated_at: new Date().toISOString() })
       .eq('id', chat_id)
 
-    console.log('Bot response saved successfully')
+    console.log('=== Bot response saved successfully ===')
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Bot response saved successfully',
+        message: 'Bot response generated and saved',
         bot_message: botMessage,
-        chat_id: chat_id
+        bot_message_id: botMessageData.id
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -145,7 +152,7 @@ Deno.serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('Chatbot function error:', error)
+    console.error('=== Chatbot function error ===', error)
     return new Response(
       JSON.stringify({ 
         error: error.message || 'Internal server error'

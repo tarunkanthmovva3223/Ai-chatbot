@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase, Message } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
@@ -7,6 +7,22 @@ export function useMessages(chatId: string | null) {
   const [loading, setLoading] = useState(true)
   const [botTyping, setBotTyping] = useState(false)
   const { user } = useAuth()
+
+  // Polling mechanism to ensure messages appear
+  const pollForNewMessages = useCallback(async () => {
+    if (!user || !chatId) return
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('chat_id', chatId)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true })
+
+    if (!error && data) {
+      setMessages(data)
+    }
+  }, [user, chatId])
 
   useEffect(() => {
     if (!user || !chatId) {
@@ -18,64 +34,29 @@ export function useMessages(chatId: string | null) {
     console.log('Setting up messages for chat:', chatId)
     fetchMessages()
 
-    // Subscribe to message changes with a simpler approach
+    // Set up real-time subscription
     const subscription = supabase
-      .channel(`messages_${chatId}`)
+      .channel(`messages_${chatId}_${Date.now()}`)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'messages',
           filter: `chat_id=eq.${chatId}`,
         },
         (payload) => {
-          console.log('Message subscription triggered:', payload)
-          const newMessage = payload.new as Message
-          
-          // Verify this message belongs to the current user and chat
-          if (newMessage.user_id === user.id && newMessage.chat_id === chatId) {
-            console.log('Adding message via subscription:', {
-              id: newMessage.id,
-              isBot: newMessage.is_bot,
-              content: newMessage.content.substring(0, 50)
-            })
-            
-            setMessages(prev => {
-              // Check for duplicates
-              const exists = prev.some(msg => msg.id === newMessage.id)
-              if (exists) {
-                console.log('Message already exists, skipping')
-                return prev
-              }
-              
-              // Add the new message and sort by timestamp
-              const updated = [...prev, newMessage].sort((a, b) => 
-                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-              )
-              
-              // If it's a bot message, stop typing indicator
-              if (newMessage.is_bot) {
-                console.log('Bot message received, stopping typing indicator')
-                setBotTyping(false)
-              }
-              
-              return updated
-            })
-          } else {
-            console.log('Message not for current user/chat, ignoring')
-          }
+          console.log('Real-time message update:', payload)
+          // Immediately poll for latest messages
+          pollForNewMessages()
         }
       )
-      .subscribe((status) => {
-        console.log('Messages subscription status:', status)
-      })
+      .subscribe()
 
     return () => {
-      console.log('Cleaning up subscription for chat:', chatId)
       subscription.unsubscribe()
     }
-  }, [user, chatId])
+  }, [user, chatId, pollForNewMessages])
 
   const fetchMessages = async () => {
     if (!user || !chatId) return
@@ -103,8 +84,21 @@ export function useMessages(chatId: string | null) {
     console.log('Sending message:', content.substring(0, 50))
 
     try {
-      // Insert user message first
-      const { data: userMessage, error: userError } = await supabase
+      // Insert user message and show immediately
+      const userMessage: Message = {
+        id: `temp-${Date.now()}`,
+        chat_id: chatId,
+        content,
+        is_bot: false,
+        user_id: user.id,
+        created_at: new Date().toISOString(),
+      }
+
+      // Add user message to UI immediately
+      setMessages(prev => [...prev, userMessage])
+
+      // Save to database
+      const { data: savedUserMessage, error: userError } = await supabase
         .from('messages')
         .insert([
           {
@@ -118,27 +112,21 @@ export function useMessages(chatId: string | null) {
         .single()
 
       if (userError) {
-        console.error('Error sending user message:', userError)
+        console.error('Error saving user message:', userError)
         return null
       }
 
-      console.log('User message saved:', userMessage.id)
-
-      // Add user message to state immediately (don't wait for subscription)
-      setMessages(prev => {
-        const exists = prev.some(msg => msg.id === userMessage.id)
-        if (exists) return prev
-        return [...prev, userMessage].sort((a, b) => 
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      // Replace temp message with real one
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === userMessage.id ? savedUserMessage : msg
         )
-      })
+      )
 
-      // Start bot typing indicator
+      // Start bot typing
       setBotTyping(true)
-      console.log('Started bot typing indicator')
 
-      // Call the chatbot function
-      console.log('Calling chatbot Edge Function...')
+      // Call chatbot function
       const response = await supabase.functions.invoke('chatbot', {
         body: {
           chat_id: chatId,
@@ -147,13 +135,10 @@ export function useMessages(chatId: string | null) {
         },
       })
 
-      console.log('Chatbot function response:', response)
-
       if (response.error) {
         console.error('Chatbot function error:', response.error)
         setBotTyping(false)
         
-        // Add error message directly to state
         const errorMessage: Message = {
           id: `error-${Date.now()}`,
           chat_id: chatId,
@@ -164,22 +149,64 @@ export function useMessages(chatId: string | null) {
         }
         
         setMessages(prev => [...prev, errorMessage])
-      } else {
-        console.log('Chatbot function succeeded, waiting for bot message via subscription...')
-        // The bot message will be added via the real-time subscription
-        // If it doesn't arrive in 30 seconds, we'll stop the typing indicator
-        setTimeout(() => {
-          setBotTyping(false)
-          console.log('Typing indicator timeout - stopped after 30 seconds')
-        }, 30000)
+        return null
       }
 
-      return userMessage
+      // Poll for bot response every 500ms for up to 15 seconds
+      let attempts = 0
+      const maxAttempts = 30
+      
+      const pollForBotResponse = async () => {
+        attempts++
+        
+        const { data: latestMessages } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chatId)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true })
+
+        if (latestMessages) {
+          const botMessage = latestMessages.find(msg => 
+            msg.is_bot && 
+            new Date(msg.created_at) > new Date(savedUserMessage.created_at)
+          )
+
+          if (botMessage) {
+            console.log('Bot response found via polling!')
+            setMessages(latestMessages)
+            setBotTyping(false)
+            return
+          }
+        }
+
+        if (attempts < maxAttempts) {
+          setTimeout(pollForBotResponse, 500)
+        } else {
+          console.log('Polling timeout - no bot response received')
+          setBotTyping(false)
+          
+          const timeoutMessage: Message = {
+            id: `timeout-${Date.now()}`,
+            chat_id: chatId,
+            content: 'Sorry, the response is taking longer than expected. Please try again.',
+            is_bot: true,
+            user_id: user.id,
+            created_at: new Date().toISOString(),
+          }
+          
+          setMessages(prev => [...prev, timeoutMessage])
+        }
+      }
+
+      // Start polling after a short delay
+      setTimeout(pollForBotResponse, 1000)
+
+      return savedUserMessage
     } catch (error) {
       console.error('Error in sendMessage:', error)
       setBotTyping(false)
       
-      // Add error message to state
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         chat_id: chatId,
