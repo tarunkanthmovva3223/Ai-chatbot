@@ -41,9 +41,9 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <h2 className="text-lg font-semibold text-gray-900">{chat.title}</h2>
-        <p className="text-sm text-gray-500">
+      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{chat.title}</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           AI-powered conversation
           {botTyping && (
             <span className="ml-2 text-blue-600">
@@ -54,16 +54,16 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+      <div className="flex-1 overflow-y-auto p-6 bg-gray-50 dark:bg-gray-800">
         {loading ? (
           <div className="flex items-center justify-center h-32">
-            <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-gray-400 dark:text-gray-500 animate-spin" />
           </div>
         ) : (
           <div className="space-y-6">
             {messages.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-500">
+                <p className="text-gray-500 dark:text-gray-400">
                   Start a conversation with the AI assistant!
                 </p>
               </div>
@@ -82,7 +82,7 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
       </div>
 
       {/* Input Form */}
-      <div className="bg-white border-t border-gray-200 p-4">
+      <div className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 p-4">
         <form onSubmit={handleSubmit} className="flex space-x-4">
           <div className="flex-1">
             <input
@@ -91,14 +91,14 @@ export function ChatInterface({ chat }: ChatInterfaceProps) {
               onChange={(e) => setMessage(e.target.value)}
               disabled={sending}
               placeholder={botTyping ? "AI is responding..." : "Type your message..."}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
             />
           </div>
           
           <button
             type="submit"
             disabled={!message.trim() || sending || botTyping}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg transition-colors flex items-center justify-center min-w-[100px]"
+            className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white px-6 py-3 rounded-lg transition-colors flex items-center justify-center min-w-[100px]"
           >
             {sending ? (
               <Loader2 className="w-5 h-5 animate-spin" />
