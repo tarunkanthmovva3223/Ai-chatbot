@@ -21,8 +21,8 @@ Deno.serve(async (req) => {
     console.log('=== Chatbot function started ===')
     
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      Deno.get('SUPABASE_URL') ?? '',
+      Deno.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
         auth: {
           autoRefreshToken: false,
