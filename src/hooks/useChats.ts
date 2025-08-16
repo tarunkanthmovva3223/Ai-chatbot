@@ -46,6 +46,19 @@ export function useChats() {
           fetchChats()
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'chats',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('Chat deleted:', payload)
+          fetchChats()
+        }
+      )
       .subscribe((status) => {
         console.log('Chats subscription status:', status)
       })
@@ -78,6 +91,18 @@ export function useChats() {
   const createChat = async (title: string) => {
     if (!user) return null
 
+    // Optimistic update: Add chat locally with a temp ID
+    const tempId = `temp-${Date.now()}`
+    const newChat: Chat = {
+      id: tempId,
+      title,
+      user_id: user.id,
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    }
+
+    setChats((prev) => [newChat, ...prev])
+
     const { data, error } = await supabase
       .from('chats')
       .insert([
@@ -91,13 +116,20 @@ export function useChats() {
 
     if (error) {
       console.error('Error creating chat:', error)
+      // Rollback optimistic update
+      setChats((prev) => prev.filter((chat) => chat.id !== tempId))
       return null
     }
 
+    // Replace temp chat with real one from DB
+    setChats((prev) => [data, ...prev.filter((chat) => chat.id !== tempId)])
     return data
   }
 
   const deleteChat = async (chatId: string) => {
+    // Optimistic update: remove from UI instantly
+    setChats((prev) => prev.filter((chat) => chat.id !== chatId))
+
     const { error } = await supabase
       .from('chats')
       .delete()
@@ -105,6 +137,8 @@ export function useChats() {
 
     if (error) {
       console.error('Error deleting chat:', error)
+      // Rollback if deletion failed
+      fetchChats()
       return false
     }
 
