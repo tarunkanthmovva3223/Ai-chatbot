@@ -18,9 +18,9 @@ export function useMessages(chatId: string | null) {
     console.log('Setting up messages for chat:', chatId)
     fetchMessages()
 
-    // Subscribe to ALL message changes for this chat
+    // Subscribe to message changes with a simpler approach
     const subscription = supabase
-      .channel(`chat-messages-${chatId}`)
+      .channel(`messages_${chatId}`)
       .on(
         'postgres_changes',
         {
@@ -30,31 +30,40 @@ export function useMessages(chatId: string | null) {
           filter: `chat_id=eq.${chatId}`,
         },
         (payload) => {
-          console.log('New message received via subscription:', payload)
+          console.log('Message subscription triggered:', payload)
           const newMessage = payload.new as Message
           
-          // Only add if it belongs to the current user and chat
+          // Verify this message belongs to the current user and chat
           if (newMessage.user_id === user.id && newMessage.chat_id === chatId) {
+            console.log('Adding message via subscription:', {
+              id: newMessage.id,
+              isBot: newMessage.is_bot,
+              content: newMessage.content.substring(0, 50)
+            })
+            
             setMessages(prev => {
-              // Check if message already exists to avoid duplicates
+              // Check for duplicates
               const exists = prev.some(msg => msg.id === newMessage.id)
               if (exists) {
                 console.log('Message already exists, skipping')
                 return prev
               }
               
-              console.log('Adding new message to state:', newMessage.id, newMessage.is_bot ? 'bot' : 'user')
+              // Add the new message and sort by timestamp
               const updated = [...prev, newMessage].sort((a, b) => 
                 new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
               )
               
-              // If it's a bot message, stop the typing indicator
+              // If it's a bot message, stop typing indicator
               if (newMessage.is_bot) {
+                console.log('Bot message received, stopping typing indicator')
                 setBotTyping(false)
               }
               
               return updated
             })
+          } else {
+            console.log('Message not for current user/chat, ignoring')
           }
         }
       )
@@ -94,7 +103,7 @@ export function useMessages(chatId: string | null) {
     console.log('Sending message:', content.substring(0, 50))
 
     try {
-      // Insert user message
+      // Insert user message first
       const { data: userMessage, error: userError } = await supabase
         .from('messages')
         .insert([
@@ -109,13 +118,13 @@ export function useMessages(chatId: string | null) {
         .single()
 
       if (userError) {
-        console.error('Error sending message:', userError)
+        console.error('Error sending user message:', userError)
         return null
       }
 
       console.log('User message saved:', userMessage.id)
 
-      // Immediately add user message to local state
+      // Add user message to state immediately (don't wait for subscription)
       setMessages(prev => {
         const exists = prev.some(msg => msg.id === userMessage.id)
         if (exists) return prev
@@ -124,27 +133,27 @@ export function useMessages(chatId: string | null) {
         )
       })
 
-      // Show bot typing indicator
+      // Start bot typing indicator
       setBotTyping(true)
+      console.log('Started bot typing indicator')
 
       // Call the chatbot function
-      console.log('Calling chatbot function...')
-      const { data: botResponse, error: functionError } = await supabase.functions.invoke(
-        'chatbot',
-        {
-          body: {
-            chat_id: chatId,
-            message: content,
-            user_id: user.id,
-          },
-        }
-      )
+      console.log('Calling chatbot Edge Function...')
+      const response = await supabase.functions.invoke('chatbot', {
+        body: {
+          chat_id: chatId,
+          message: content,
+          user_id: user.id,
+        },
+      })
 
-      if (functionError) {
-        console.error('Error calling chatbot function:', functionError)
+      console.log('Chatbot function response:', response)
+
+      if (response.error) {
+        console.error('Chatbot function error:', response.error)
         setBotTyping(false)
         
-        // Add error message to chat
+        // Add error message directly to state
         const errorMessage: Message = {
           id: `error-${Date.now()}`,
           chat_id: chatId,
@@ -153,16 +162,34 @@ export function useMessages(chatId: string | null) {
           user_id: user.id,
           created_at: new Date().toISOString(),
         }
+        
         setMessages(prev => [...prev, errorMessage])
       } else {
-        console.log('Chatbot function response:', botResponse)
-        // Don't stop typing here - let the subscription handle it when the bot message arrives
+        console.log('Chatbot function succeeded, waiting for bot message via subscription...')
+        // The bot message will be added via the real-time subscription
+        // If it doesn't arrive in 30 seconds, we'll stop the typing indicator
+        setTimeout(() => {
+          setBotTyping(false)
+          console.log('Typing indicator timeout - stopped after 30 seconds')
+        }, 30000)
       }
 
       return userMessage
     } catch (error) {
-      console.error('Error with message sending:', error)
+      console.error('Error in sendMessage:', error)
       setBotTyping(false)
+      
+      // Add error message to state
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        chat_id: chatId,
+        content: 'Sorry, something went wrong. Please try again.',
+        is_bot: true,
+        user_id: user.id,
+        created_at: new Date().toISOString(),
+      }
+      
+      setMessages(prev => [...prev, errorMessage])
       return null
     }
   }
