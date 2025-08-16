@@ -40,7 +40,7 @@ Deno.serve(async (req)=>{
     }
     console.log('Chat verified, generating AI response...');
     // Get OpenRouter API key
-    const openRouterKey = Deno.get('OPENROUTER_API_KEY');
+    const openRouterKey = Deno.env.get('OPENROUTER_API_KEY');
     let botMessage = '';
     if (!openRouterKey) {
       console.warn('OpenRouter API key not configured');
