@@ -57,7 +57,7 @@ Deno.serve(async (req)=>{
             'X-Title': 'AI Chat Assistant'
           },
           body: JSON.stringify({
-            model: 'mistralai/mistral-7b-instruct-v0.2',
+            model: 'google/gemma-7b-it',
             messages: [
               {
                 role: 'system',
